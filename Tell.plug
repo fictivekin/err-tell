@@ -1,0 +1,9 @@
+[Core]
+Name = Tell
+Module = Tell
+
+[Python]
+Version = 2+
+
+[Documentation]
+Description = Stores messages to be relayed the next time a user is seen in a channel
