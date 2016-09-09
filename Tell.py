@@ -216,8 +216,8 @@ class Tell(BotPlugin):
         recipient = args.split(' ')[0].replace('[,:;]$', '')
         message = ' '.join(args.split(' ')[1:])
 
-        if message.len() == 0:
-            return 'No need to leave a blank tell.'
+        if len(message) == 0:
+            return 'Tell has no message. I do apologize, but I\'m going to ignore it, {}.'.format(sender)
 
         if recipient == self.bot_identifier.nick:
             return 'Thanks for wanting to leave me a tell, {}, but why not just tell me now?'.format(sender)
