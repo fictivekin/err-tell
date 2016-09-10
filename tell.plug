@@ -1,6 +1,6 @@
 [Core]
-Name = Tell
-Module = Tell
+Name = tell
+Module = tell
 
 [Python]
 Version = 2+
