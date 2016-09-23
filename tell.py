@@ -348,6 +348,10 @@ class Tell(BotPlugin):
 
         author = str(msg.frm.nick)
 
+        if author == self.bot_identifier.nick:
+            # Ignore all messages the bot sends
+            return
+
         if author in self.unsent_counts and self.unsent_counts[author] > 0:
             self.send_tells(author)
 
