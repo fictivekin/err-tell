@@ -180,11 +180,14 @@ class Tell(BotPlugin):
                !tell rm 312
         """
 
-        if len(args) != 1:
-            return 'Usage: !tell rm <id>'
+        if not args:
+            return 'Usage: !tellrm <id>'
 
         sender = str(msg.frm.nick)
         tell_id = args[0]
+
+        if not isinstance(tell_id, int):
+            return 'Usage: !tellrm <id>'
 
         logging.debug('Removing tell {} for user {}'.format(tell_id, sender))
 
