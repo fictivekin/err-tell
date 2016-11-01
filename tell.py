@@ -116,10 +116,10 @@ class Tell(BotPlugin):
 
         destination = self.build_identifier(channel)
         for recipient in self.unsent_counts.keys():
-            if self.unsent_counts[recipient] > 1:
-                self.send(destination, '{} messages are waiting for {}'.format(self.unsent_counts[recipient], recipient))
+            if self.unsent_counts[recipient.lower()] > 1:
+                self.send(destination, '{} messages are waiting for {}'.format(self.unsent_counts[recipient.lower()], recipient))
             else:
-                self.send(destination, '{} message is waiting for {}'.format(self.unsent_counts[recipient], recipient))
+                self.send(destination, '{} message is waiting for {}'.format(self.unsent_counts[recipient.lower()], recipient))
 
         return 'That is all of the waiting tells, {}'.format(sender)
 
@@ -166,7 +166,7 @@ class Tell(BotPlugin):
                     tell['message']))
 
         if not is_at_least_one:
-            if sender in self.author_counts and self.author_counts[sender] > 0:
+            if sender.lower() in self.author_counts and self.author_counts[sender.lower()] > 0:
                 return 'None of your tells are unsent, {}'.format(sender)
             else:
                 return 'You have not left a tell yet, {}'.format(sender)
@@ -270,15 +270,15 @@ class Tell(BotPlugin):
 
         logging.debug('Saving tell from {} for {} in {}'.format(sender, recipient, channel))
 
-        if not sender in self.author_counts:
-            self.author_counts[sender] = 0
+        if not sender.lower() in self.author_counts:
+            self.author_counts[sender.lower()] = 0
 
-        self.author_counts[sender] += 1
+        self.author_counts[sender.lower()] += 1
 
-        if not recipient in self.unsent_counts:
-            self.unsent_counts[recipient] = 0
+        if not recipient.lower() in self.unsent_counts:
+            self.unsent_counts[recipient.lower()] = 0
 
-        self.unsent_counts[recipient] += 1
+        self.unsent_counts[recipient.lower()] += 1
 
         try:
             logging.debug('Obtaining thread lock...')
@@ -330,13 +330,13 @@ class Tell(BotPlugin):
                                   tell['created_ts'],
                                   tell['message']))
                     self.mark_as_sent(tell['id'])
-                    self.unsent_counts[recipient] -= 1
+                    self.unsent_counts[recipient.lower()] -= 1
 
             else:
                 self.send_join_message(recipient, channel)
 
         # just in case something went wrong with the counts
-        if self.unsent_counts[recipient] < 0:
+        if self.unsent_counts[recipient.lower()] < 0:
             self.update_counts()
 
 
@@ -398,7 +398,7 @@ class Tell(BotPlugin):
             # Ignore all messages the bot sends
             return
 
-        if author in self.unsent_counts and self.unsent_counts[author] > 0:
+        if author.lower() in self.unsent_counts and self.unsent_counts[author.lower()] > 0:
             self.send_tells(author)
 
 
@@ -406,8 +406,8 @@ class Tell(BotPlugin):
 class TellSql():
     SQL_MODIFY_RECIPIENT = '''
 update tells
-   set recipient = ?
- where recipient = ?
+   set recipient = lower(?)
+ where recipient = lower(?)
    and is_sent = 0
 '''
 
@@ -427,14 +427,14 @@ create table if not exists tells (
     SQL_INSERT_TELL = '''
 insert into tells 
       (sender, channel, recipient, message, created_ts)
-values(?, ?, ?, ?, strftime('%s', 'now'))
+values(lower(?), ?, lower(?), ?, strftime('%s', 'now'))
 '''
 
     SQL_LIST_TELLS = '''
 select id, recipient, channel, message,
        created_ts
   from tells
- where sender = ?
+ where sender = lower(?)
    and is_sent = 0
  order by created_ts desc
 '''
@@ -460,7 +460,7 @@ select count(*) as count,
 select count(*) as count,
        channel
   from tells
- where recipient = ?
+ where recipient = lower(?)
    and is_sent = 0
  group by channel
 '''
@@ -469,7 +469,7 @@ select count(*) as count,
 select id, sender, message,
        created_ts
   from tells
- where recipient = ?
+ where recipient = lower(?)
    and channel = ?
    and is_sent = 0
  order by created_ts asc
@@ -485,13 +485,13 @@ update tells
     SQL_CHECK_IF_EXISTS = '''
 select *
   from tells
- where sender = ?
+ where sender = lower(?)
    and id = ?
 '''
 
     SQL_REMOVE_TELL = '''
 delete from tells
- where sender = ?
+ where sender = lower(?)
    and id = ?
 '''
 
