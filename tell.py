@@ -174,7 +174,7 @@ class Tell(BotPlugin):
         return 'That is all of your waiting tells, {}'.format(sender)
 
 
-    @botcmd()
+    @botcmd(split_args_with=' ')
     def tellrm(self, msg, args):
         """
            Removes an unsent tell from the db if that tell was sent by you
@@ -182,24 +182,22 @@ class Tell(BotPlugin):
                !tellrm 312
         """
 
-        if not args:
+        try:
+            tell_id = args[0]
+        except IndexError:
+            logging.debug('No parameter passed')
             return 'Usage: !tellrm <id>'
 
         sender = str(msg.frm.nick)
-        tell_id = args[0]
-
-        if not isinstance(tell_id, int):
-            return 'Usage: !tellrm <id>'
 
         logging.debug('Removing tell {} for user {}'.format(tell_id, sender))
 
         try:
             logging.debug('Obtaining thread lock...')
             sqlite3_lock.acquire(True)
-            self.cur.execute(TellSql.SQL_IS_REMOVABLE, (sender, tell_id,))
-            tells = self.cur.fetchOne()
+            self.cur.execute(TellSql.SQL_CHECK_IF_EXISTS, (sender, tell_id,))
+            tells = self.cur.fetchone()
             if not tells:
-                sqlite3_lock.release()
                 return "No tell found with that id."
             self.cur.execute(TellSql.SQL_REMOVE_TELL, (sender, tell_id,))
             self.con.commit()
@@ -209,7 +207,7 @@ class Tell(BotPlugin):
         return 'Removed: {}.'.format(tell_id)
 
 
-    @botcmd(admin_only=True)
+    @botcmd(split_args_with=' ', admin_only=True)
     def tellmod(self, msg, args):
         """
            Changes all waiting tells for one recipient to another
@@ -242,7 +240,7 @@ class Tell(BotPlugin):
         return 'Modification completed. Verify with !tellstatus.'
 
 
-    @botcmd()
+    @botcmd(split_args_with=' ')
     def tell(self, msg, args):
         """
            Adds a new message to be sent to a user the next time they are seen
@@ -256,8 +254,13 @@ class Tell(BotPlugin):
             return 'Tells can only be left in public channels.'
 
         logging.debug('Args are: {}'.format(args))
-        recipient = args.split(' ')[0].replace('[,:;]$', '')
-        message = ' '.join(args.split(' ')[1:])
+        recipient = args[0]
+
+        # Trim off the last character if it's one of these
+        if recipient[-1] in [',',':',';']:
+            recipient = recipient[:-1]
+
+        message = ' '.join(args[1:])
 
         if len(message) == 0:
             return 'Tell has no message. I do apologize, but I\'m going to ignore it, {}.'.format(sender)
@@ -401,6 +404,13 @@ class Tell(BotPlugin):
 
 
 class TellSql():
+    SQL_MODIFY_RECIPIENT = '''
+update tells
+   set recipient = ?
+ where recipient = ?
+   and is_sent = 0
+'''
+
     SQL_CREATE_TABLE_TELLS = '''
 create table if not exists tells (
     id integer primary key,
@@ -472,7 +482,7 @@ update tells
  where id = ?
 '''
 
-    SQL_CHECK_IF_REMOVABLE = '''
+    SQL_CHECK_IF_EXISTS = '''
 select *
   from tells
  where sender = ?
