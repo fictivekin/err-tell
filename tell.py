@@ -100,6 +100,8 @@ class Tell(BotPlugin):
     def tellstatus(self, msg, args):
         """
            Shows counts of all the unsent tells by user
+           Usage:
+               !tellstatus
         """
         sender = str(msg.frm.nick)
         channel = str(msg.to)
@@ -127,7 +129,7 @@ class Tell(BotPlugin):
         """
            Lists all of the requesting user's unsent tells
            Usage:
-               !tell list
+               !telllist
         """
 
         sender = str(msg.frm.nick)
@@ -177,7 +179,7 @@ class Tell(BotPlugin):
         """
            Removes an unsent tell from the db if that tell was sent by you
            Usage:
-               !tell rm 312
+               !tellrm 312
         """
 
         if not args:
@@ -205,6 +207,39 @@ class Tell(BotPlugin):
             sqlite3_lock.release()
 
         return 'Removed: {}.'.format(tell_id)
+
+
+    @botcmd(admin_only=True)
+    def tellmod(self, msg, args):
+        """
+           Changes all waiting tells for one recipient to another
+           Usage:
+               !tellmod <old> <new>
+        """
+        try:
+            old = args[0]
+            new = args[1]
+        except IndexError:
+            return 'Usage !tellmod <old> <new>'
+
+        if not old or not new:
+            return 'Usage: !tellmod <old> <new>'
+
+        sender = str(msg.frm.nick)
+
+        logging.debug('Modifying all tells for user {} to be for {}'.format(old, new))
+
+        try:
+            logging.debug('Obtaining thread lock...')
+            sqlite3_lock.acquire(True)
+            self.cur.execute(TellSql.SQL_MODIFY_RECIPIENT, (new, old,))
+            self.con.commit()
+        finally:
+            sqlite3_lock.release()
+
+        # Update all the internal counters
+        self.update_counts()
+        return 'Modification completed. Verify with !tellstatus.'
 
 
     @botcmd()
