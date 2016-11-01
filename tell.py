@@ -194,6 +194,11 @@ class Tell(BotPlugin):
         try:
             logging.debug('Obtaining thread lock...')
             sqlite3_lock.acquire(True)
+            self.cur.execute(TellSql.SQL_IS_REMOVABLE, (sender, tell_id,))
+            tells = self.cur.fetchOne()
+            if not tells:
+                sqlite3_lock.release()
+                return "No tell found with that id."
             self.cur.execute(TellSql.SQL_REMOVE_TELL, (sender, tell_id,))
             self.con.commit()
         finally:
@@ -430,6 +435,13 @@ update tells
    set is_sent = 1,
        sent_ts = strftime('%s', 'now')
  where id = ?
+'''
+
+    SQL_CHECK_IF_REMOVABLE = '''
+select *
+  from tells
+ where sender = ?
+   and id = ?
 '''
 
     SQL_REMOVE_TELL = '''
