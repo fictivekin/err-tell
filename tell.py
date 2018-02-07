@@ -5,12 +5,6 @@ from errbot import botcmd, BotPlugin
 from errbot.backends.base import RoomDoesNotExistError
 from ago import human
 from datetime import datetime
-import threading
-
-# This is ugly, but because the sqlite3 module is not thread-safe, this needs to be done.
-# Ref: https://docs.python.org/3.5/library/sqlite3.html#multithreading
-sqlite3_lock = threading.Lock()
-
 
 class Tell(BotPlugin):
     """Saves a message to tell a user the next time they are seen in a channel"""
@@ -27,15 +21,7 @@ class Tell(BotPlugin):
 
         self.con = sqlite3.connect(TELLS_DB, check_same_thread=False)
         self.con.row_factory = sqlite3.Row # Allows for named results
-        self.cur = self.con.cursor()
-        try:
-            logging.debug('Obtaining thread lock...')
-            sqlite3_lock.acquire(True)
-            self.cur.execute(TellSql.SQL_CREATE_TABLE_TELLS)
-            self.con.commit()
-
-        finally:
-             sqlite3_lock.release()
+        self.con.execute(TellSql.SQL_CREATE_TABLE_TELLS)
 
         self.update_counts()
 
@@ -56,13 +42,7 @@ class Tell(BotPlugin):
 
     def _update_unsent_counts(self):
         logging.debug('Updating unsent counts')
-        try:
-            logging.debug('Obtaining thread lock...')
-            sqlite3_lock.acquire(True)
-            self.cur.execute(TellSql.SQL_LOAD_UNSENT_COUNTS)
-            msgs = self.cur.fetchall()
-        finally:
-            sqlite3_lock.release()
+        msgs = self.con.execute(TellSql.SQL_LOAD_UNSENT_COUNTS).fetchall()
 
         self.unsent_counts = {}
         for msg in msgs:
@@ -72,13 +52,7 @@ class Tell(BotPlugin):
 
     def _update_author_counts(self):
         logging.debug('Updating author counts')
-        try:
-            logging.debug('Obtaining thread lock...')
-            sqlite3_lock.acquire(True)
-            self.cur.execute(TellSql.SQL_LOAD_AUTHOR_COUNTS)
-            all_msgs = self.cur.fetchall()
-        finally:
-            sqlite3_lock.release()
+        all_msgs = self.con.execute(TellSql.SQL_LOAD_AUTHOR_COUNTS).fetchall()
 
         self.author_counts = {}
         for msg in all_msgs:
@@ -139,13 +113,7 @@ class Tell(BotPlugin):
 
         logging.info('Retrieving list of unsent tells saved by {}'.format(sender))
 
-        try:
-            logging.debug('Obtaining thread lock...')
-            sqlite3_lock.acquire(True)
-            self.cur.execute(TellSql.SQL_LIST_TELLS, (sender,))
-            tells = self.cur.fetchall()
-        finally:
-            sqlite3_lock.release()
+        tells = self.con.execute(TellSql.SQL_LIST_TELLS, (sender,)).fetchall()
 
         destination = self.build_identifier(channel)
 
@@ -192,17 +160,10 @@ class Tell(BotPlugin):
 
         logging.debug('Removing tell {} for user {}'.format(tell_id, sender))
 
-        try:
-            logging.debug('Obtaining thread lock...')
-            sqlite3_lock.acquire(True)
-            self.cur.execute(TellSql.SQL_CHECK_IF_EXISTS, (sender, tell_id,))
-            tells = self.cur.fetchone()
-            if not tells:
-                return "No tell found with that id."
-            self.cur.execute(TellSql.SQL_REMOVE_TELL, (sender, tell_id,))
-            self.con.commit()
-        finally:
-            sqlite3_lock.release()
+        tells = self.con.execute(TellSql.SQL_CHECK_IF_EXISTS, (sender, tell_id,)).fetchone()
+        if not tells:
+            return "No tell found with that id."
+        self.con.execute(TellSql.SQL_REMOVE_TELL, (sender, tell_id,))
 
         return 'Removed: {}.'.format(tell_id)
 
@@ -227,13 +188,7 @@ class Tell(BotPlugin):
 
         logging.debug('Modifying all tells for user {} to be for {}'.format(old, new))
 
-        try:
-            logging.debug('Obtaining thread lock...')
-            sqlite3_lock.acquire(True)
-            self.cur.execute(TellSql.SQL_MODIFY_RECIPIENT, (new, old,))
-            self.con.commit()
-        finally:
-            sqlite3_lock.release()
+        self.con.execute(TellSql.SQL_MODIFY_RECIPIENT, (new, old,))
 
         # Update all the internal counters
         self.update_counts()
@@ -280,13 +235,7 @@ class Tell(BotPlugin):
 
         self.unsent_counts[recipient.lower()] += 1
 
-        try:
-            logging.debug('Obtaining thread lock...')
-            sqlite3_lock.acquire(True)
-            self.cur.execute(TellSql.SQL_INSERT_TELL, (sender, channel, recipient, message,))
-            self.con.commit()
-        finally:
-            sqlite3_lock.release()
+        self.con.execute(TellSql.SQL_INSERT_TELL, (sender, channel, recipient, message,))
 
         return 'Ok, {}. Message stored.'.format(sender)
 
@@ -298,13 +247,7 @@ class Tell(BotPlugin):
 
         logging.debug('Sending tells for {}'.format(recipient))
 
-        try:
-            logging.debug('Obtaining thread lock...')
-            sqlite3_lock.acquire(True)
-            self.cur.execute(TellSql.SQL_GET_TELLS_COUNTS_FOR_USER, (recipient,))
-            counts = self.cur.fetchall()
-        finally:
-            sqlite3_lock.release()
+        counts = self.con.execute(TellSql.SQL_GET_TELLS_COUNTS_FOR_USER, (recipient,)).fetchall()
 
         for room_count in counts:
             channel = room_count['channel']
@@ -313,13 +256,7 @@ class Tell(BotPlugin):
                 continue
 
             if self.is_user_in_channel(recipient, channel):
-                try:
-                    logging.debug('Obtaining thread lock...')
-                    sqlite3_lock.acquire(True)
-                    self.cur.execute(TellSql.SQL_GET_TELLS_FOR_USER_ROOM, (recipient, channel,))
-                    tells = self.cur.fetchall()
-                finally:
-                    sqlite3_lock.release()
+                tells = self.con.execute(TellSql.SQL_GET_TELLS_FOR_USER_ROOM, (recipient, channel,)).fetchall()
 
                 channel_id = self.build_identifier(channel)
                 for tell in tells:
@@ -378,13 +315,7 @@ class Tell(BotPlugin):
         """
            Marks a message as sent in the db
         """
-        try:
-            logging.debug('Obtaining thread lock...')
-            sqlite3_lock.acquire(True)
-            self.cur.execute(TellSql.SQL_MARK_TELL_SENT, (tell_id,))
-            self.con.commit()
-        finally:
-            sqlite3_lock.release()
+        self.con.execute(TellSql.SQL_MARK_TELL_SENT, (tell_id,))
 
 
     def callback_message(self, msg):
