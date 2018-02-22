@@ -9,7 +9,7 @@ from datetime import datetime
 class Tell(BotPlugin):
     """Saves a message to tell a user the next time they are seen in a channel"""
 
-    unsent_counts = {}
+    unsent_tell_counts = {}
     con = None
     cur = None
 
@@ -36,18 +36,18 @@ class Tell(BotPlugin):
 
 
     def update_counts(self):
-        self._update_unsent_counts()
+        self._update_unsent_tell_counts()
         self._update_author_counts()
 
 
-    def _update_unsent_counts(self):
-        logging.debug('Updating unsent counts')
-        msgs = self.con.execute(TellSql.SQL_LOAD_UNSENT_COUNTS).fetchall()
+    def _update_unsent_tell_counts(self):
+        logging.debug('Updating unsent tell counts')
+        msgs = self.con.execute(TellSql.SQL_LOAD_UNSENT_TELL_COUNTS).fetchall()
 
-        self.unsent_counts = {}
+        self.unsent_tell_counts = {}
         for msg in msgs:
             logging.debug('{}: {}'.format(msg['recipient'], msg['count']))
-            self.unsent_counts.update({msg['recipient']: msg['count']})
+            self.unsent_tell_counts.update({msg['recipient']: msg['count']})
 
 
     def _update_author_counts(self):
@@ -85,15 +85,17 @@ class Tell(BotPlugin):
         logging.debug('Retrieving global status of tells')
         self.update_counts()
 
-        if len(self.unsent_counts.keys()) == 0:
+        if len(self.unsent_tell_counts.keys()) == 0:
             return 'There are no tells waiting for anyone, {}'.format(sender)
 
+        self.send(destination, '{} | {}'.format('Who'.ljust(15), 'Count'))
+
         destination = self.build_identifier(channel)
-        for recipient in self.unsent_counts.keys():
-            if self.unsent_counts[recipient.lower()] > 1:
-                self.send(destination, '{} messages are waiting for {}'.format(self.unsent_counts[recipient.lower()], recipient))
-            else:
-                self.send(destination, '{} message is waiting for {}'.format(self.unsent_counts[recipient.lower()], recipient))
+        for recipient in self.unsent_tell_counts.keys():
+            self.send(destination,
+                      '{} | {}'.format(
+                          recipient.ljust(15),
+                          str(self.unsent_tell_counts[recipient.lower()]).rjust(5)))
 
         return 'That is all of the waiting tells, {}'.format(sender)
 
@@ -119,19 +121,30 @@ class Tell(BotPlugin):
 
         is_at_least_one = False
 
+        maxlength = 40
         for tell in tells:
             if not is_at_least_one:
                 self.send(destination,
-                          'ID   | Recipient   | Channel  | Date      | Message')
+                          '{} | {} | {} | {} | {}'.format(
+                              'ID'.ljust(5),
+                              'Recipient'.ljust(15),
+                              'Channel'.ljust(15),
+                              'When'.ljust(20),
+                              'Message'))
                 is_at_least_one = True
 
+            if len(tell['message']) > maxlength:
+                message = '{}...'.format(tell['message'][0:maxlength])
+            else:
+                message = tell['message']
+
             self.send(destination,
-                '{}  | {}  | {}  | {}  | {}'.format(
-                    tell['id'],
-                    tell['recipient'],
-                    tell['channel'],
-                    human(datetime.fromtimestamp(tell['created_ts']), 1),
-                    tell['message']))
+                '{} | {} | {} | {} | {}'.format(
+                    str(tell['id']).rjust(5),
+                    tell['recipient'].ljust(15),
+                    tell['channel'].ljust(15),
+                    human(datetime.fromtimestamp(tell['created_ts']), 1).ljust(20),
+                    message))
 
         if not is_at_least_one:
             if sender.lower() in self.author_counts and self.author_counts[sender.lower()] > 0:
@@ -160,7 +173,7 @@ class Tell(BotPlugin):
 
         logging.debug('Removing tell {} for user {}'.format(tell_id, sender))
 
-        tells = self.con.execute(TellSql.SQL_CHECK_IF_EXISTS, (sender, tell_id,)).fetchone()
+        tells = self.con.execute(TellSql.SQL_CHECK_IF_TELL_EXISTS, (sender, tell_id,)).fetchone()
         if not tells:
             return "No tell found with that id."
         self.con.execute(TellSql.SQL_REMOVE_TELL, (sender, tell_id,))
@@ -188,7 +201,7 @@ class Tell(BotPlugin):
 
         logging.debug('Modifying all tells for user {} to be for {}'.format(old, new))
 
-        self.con.execute(TellSql.SQL_MODIFY_RECIPIENT, (new, old,))
+        self.con.execute(TellSql.SQL_MODIFY_TELL_RECIPIENT, (new, old,))
 
         # Update all the internal counters
         self.update_counts()
@@ -230,10 +243,10 @@ class Tell(BotPlugin):
 
         self.author_counts[sender.lower()] += 1
 
-        if not recipient.lower() in self.unsent_counts:
-            self.unsent_counts[recipient.lower()] = 0
+        if not recipient.lower() in self.unsent_tell_counts:
+            self.unsent_tell_counts[recipient.lower()] = 0
 
-        self.unsent_counts[recipient.lower()] += 1
+        self.unsent_tell_counts[recipient.lower()] += 1
 
         self.con.execute(TellSql.SQL_INSERT_TELL, (sender, channel, recipient, message,))
 
@@ -267,13 +280,13 @@ class Tell(BotPlugin):
                                   tell['created_ts'],
                                   tell['message']))
                     self.mark_as_sent(tell['id'])
-                    self.unsent_counts[recipient.lower()] -= 1
+                    self.unsent_tell_counts[recipient.lower()] -= 1
 
             else:
                 self.send_join_message(recipient, channel)
 
         # just in case something went wrong with the counts
-        if self.unsent_counts[recipient.lower()] < 0:
+        if self.unsent_tell_counts[recipient.lower()] < 0:
             self.update_counts()
 
 
@@ -329,13 +342,13 @@ class Tell(BotPlugin):
             # Ignore all messages the bot sends
             return
 
-        if author.lower() in self.unsent_counts and self.unsent_counts[author.lower()] > 0:
+        if author.lower() in self.unsent_tell_counts and self.unsent_tell_counts[author.lower()] > 0:
             self.send_tells(author)
 
 
 
 class TellSql():
-    SQL_MODIFY_RECIPIENT = '''
+    SQL_MODIFY_TELL_RECIPIENT = '''
 update tells
    set recipient = lower(?)
  where recipient = lower(?)
@@ -370,7 +383,7 @@ select id, recipient, channel, message,
  order by created_ts desc
 '''
 
-    SQL_LOAD_UNSENT_COUNTS = '''
+    SQL_LOAD_UNSENT_TELL_COUNTS = '''
 select count(*) as count,
        recipient
   from tells
@@ -413,7 +426,7 @@ update tells
  where id = ?
 '''
 
-    SQL_CHECK_IF_EXISTS = '''
+    SQL_CHECK_IF_TELL_EXISTS = '''
 select *
   from tells
  where sender = lower(?)
@@ -425,4 +438,3 @@ delete from tells
  where sender = lower(?)
    and id = ?
 '''
-
